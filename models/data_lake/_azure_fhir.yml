@@ -1,0 +1,35 @@
+version: 2
+
+sources:
+  - name: data_lake
+    database: |
+      {%- if  target.name == "dev" -%} hakkoda_edw_dev
+      {%- elif target.name == "qa"  -%} hakkoda_edw_qa
+      {%- elif target.name == "prod"  -%} hakkoda_edw
+      {%- else -%} invalid_database
+      {%- endif -%}
+    schema: raw_stage
+    loader: ADLS
+    
+    tables:              
+      - name: azure_fhir
+        description: "Table of FHIR inputs, stored as JSON files, loaded in near-real time via Snowpipe"
+        loader: ADLS + snowpipe    # this is just for your reference
+        external:
+          location: "@healthcare.raw_stg.az_fhir_input"
+          file_format: "HEALTHCARE.RAW_STG.JSON_BUNDLE"
+
+          # Instead of an external tables, create an empty table, backfill it, and pipe new data
+          snowpipe:
+            auto_ingest:    true  # requires either `aws_sns_topic` or `integration`
+            integration:    "AZ_HKHEALTHCARE_NOTIFICATION" # Google Cloud or Azure
+            copy_options:   "on_error = continue, enforce_length = false" # e.g.
+              
+        # dbt will include three metadata columns in addition to any `columns`
+        # specified for a snowpiped table:
+        #   `metadata_filename`: the file from which this row was loaded
+        #   `metadata_file_row_number`: the numbered row this was in that file
+        #   `_dbt_copied_at`: the current_timestamp when this row was loaded (backfilled or piped)
+        #
+        # if you do not specify *any* columns for a snowpiped table, dbt will also
+        # include `value`, the JSON blob of all file contents.
